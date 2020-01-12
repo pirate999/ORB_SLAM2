@@ -51,13 +51,20 @@ class LoopClosing;
 class System;
 
 class Tracking
-{  
+{
 
 public:
-    Tracking(System* pSys, ORBVocabulary* pVoc, FrameDrawer* pFrameDrawer, MapDrawer* pMapDrawer, Map* pMap,
-             KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor);
+    Tracking(System* pSys,//SLAM系统
+            ORBVocabulary* pVoc,//词袋
+            FrameDrawer* pFrameDrawer,//画帧的
+            MapDrawer* pMapDrawer,//画地图的
+            Map* pMap,//地图
+            KeyFrameDatabase* pKFDB,//关键帧数据库
+            const string &strSettingPath,//配置
+            const int sensor);//传感器类型
 
     // Preprocess the input and call Track(). Extract features and performs stereo matching.
+    //预处理输入,并且调用Track()函数,抽取特征,并且执行立体匹配
     cv::Mat GrabImageStereo(const cv::Mat &imRectLeft,const cv::Mat &imRectRight, const double &timestamp);
     cv::Mat GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp);
     cv::Mat GrabImageMonocular(const cv::Mat &im, const double &timestamp);
@@ -169,10 +176,10 @@ protected:
     KeyFrame* mpReferenceKF;
     std::vector<KeyFrame*> mvpLocalKeyFrames;
     std::vector<MapPoint*> mvpLocalMapPoints;
-    
+
     // System
     System* mpSystem;
-    
+
     //Drawers
     Viewer* mpViewer;
     FrameDrawer* mpFrameDrawer;

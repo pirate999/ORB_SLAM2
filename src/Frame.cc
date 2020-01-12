@@ -75,21 +75,24 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     mvInvLevelSigma2 = mpORBextractorLeft->GetInverseScaleSigmaSquares();
 
     // ORB extraction
+    //开两个线程并行提取两幅图的ORB特征
     thread threadLeft(&Frame::ExtractORB,this,0,imLeft);
     thread threadRight(&Frame::ExtractORB,this,1,imRight);
     threadLeft.join();
     threadRight.join();
 
+    //特征点的数目
     N = mvKeys.size();
 
     if(mvKeys.empty())
         return;
 
+    //特征点去畸变
     UndistortKeyPoints();
 
     ComputeStereoMatches();
 
-    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));    
+    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
     mvbOutlier = vector<bool>(N,false);
 
 
@@ -125,7 +128,7 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 
     // Scale Level Info
     mnScaleLevels = mpORBextractorLeft->GetLevels();
-    mfScaleFactor = mpORBextractorLeft->GetScaleFactor();    
+    mfScaleFactor = mpORBextractorLeft->GetScaleFactor();
     mfLogScaleFactor = log(mfScaleFactor);
     mvScaleFactors = mpORBextractorLeft->GetScaleFactors();
     mvInvScaleFactors = mpORBextractorLeft->GetInverseScaleFactors();
@@ -259,7 +262,7 @@ void Frame::SetPose(cv::Mat Tcw)
 }
 
 void Frame::UpdatePoseMatrices()
-{ 
+{
     mRcw = mTcw.rowRange(0,3).colRange(0,3);
     mRwc = mRcw.t();
     mtcw = mTcw.rowRange(0,3).col(3);
@@ -271,9 +274,11 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
     pMP->mbTrackInView = false;
 
     // 3D in absolute coordinates
-    cv::Mat P = pMP->GetWorldPos(); 
+    ///MapPoint的世界坐标
+    cv::Mat P = pMP->GetWorldPos();
 
     // 3D in camera coordinates
+    ///转换到相机坐标系
     const cv::Mat Pc = mRcw*P+mtcw;
     const float &PcX = Pc.at<float>(0);
     const float &PcY= Pc.at<float>(1);
@@ -294,8 +299,10 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
         return false;
 
     // Check distance is in the scale invariance region of the MapPoint
+    ///Invariance:不变性
     const float maxDistance = pMP->GetMaxDistanceInvariance();
     const float minDistance = pMP->GetMinDistanceInvariance();
+    ///该点到相机光心的连线
     const cv::Mat PO = P-mOw;
     const float dist = cv::norm(PO);
 
@@ -303,10 +310,13 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
         return false;
 
    // Check viewing angle
+   ///垂直成像平面到光心的直线
     cv::Mat Pn = pMP->GetNormal();
 
+    ///点乘，得到cos值
     const float viewCos = PO.dot(Pn)/dist;
 
+    ///cos值越大，角度越小，如果cos值过小，说明角度不合符
     if(viewCos<viewingCosLimit)
         return false;
 
@@ -403,6 +413,7 @@ void Frame::ComputeBoW()
 
 void Frame::UndistortKeyPoints()
 {
+    //如果畸变参数为0，即没有畸变，那么直接赋值
     if(mDistCoef.at<float>(0)==0.0)
     {
         mvKeysUn=mvKeys;
@@ -410,6 +421,7 @@ void Frame::UndistortKeyPoints()
     }
 
     // Fill matrix with points
+    //存成cv::Mat格式
     cv::Mat mat(N,2,CV_32F);
     for(int i=0; i<N; i++)
     {
@@ -418,8 +430,11 @@ void Frame::UndistortKeyPoints()
     }
 
     // Undistort points
+    //将x, y 分为两个不同的通道
     mat=mat.reshape(2);
+    //给特征点去畸变
     cv::undistortPoints(mat,mat,mK,mDistCoef,cv::Mat(),mK);
+    //恢复为一个通道
     mat=mat.reshape(1);
 
     // Fill undistorted keypoint vector
@@ -473,6 +488,7 @@ void Frame::ComputeStereoMatches()
     const int nRows = mpORBextractorLeft->mvImagePyramid[0].rows;
 
     //Assign keypoints to row table
+    //vRowIndices储存的是根据行号去索引特征点的一个表格
     vector<vector<size_t> > vRowIndices(nRows,vector<size_t>());
 
     for(int i=0; i<nRows; i++)
@@ -480,14 +496,16 @@ void Frame::ComputeStereoMatches()
 
     const int Nr = mvKeysRight.size();
 
+    // 遍历特征点
     for(int iR=0; iR<Nr; iR++)
     {
         const cv::KeyPoint &kp = mvKeysRight[iR];
         const float &kpY = kp.pt.y;
-        const float r = 2.0f*mvScaleFactors[mvKeysRight[iR].octave];
+        const float r = 2.0f*mvScaleFactors[mvKeysRight[iR].octave];//不同特征点的带状搜索的宽度不同
         const int maxr = ceil(kpY+r);
         const int minr = floor(kpY-r);
 
+        //给特征点的指定带状搜索区域(minr, maxr)
         for(int yi=minr;yi<=maxr;yi++)
             vRowIndices[yi].push_back(iR);
     }
@@ -495,7 +513,7 @@ void Frame::ComputeStereoMatches()
     // Set limits for search
     const float minZ = mb;
     const float minD = 0;
-    const float maxD = mbf/minZ;
+    const float maxD = mbf/minZ; // maxD = mbf/minZ = mbf/mb = fx
 
     // For each left keypoint search a match in the right image
     vector<pair<int, int> > vDistIdx;
@@ -503,11 +521,13 @@ void Frame::ComputeStereoMatches()
 
     for(int iL=0; iL<N; iL++)
     {
+        //左图的特征点位置
         const cv::KeyPoint &kpL = mvKeys[iL];
         const int &levelL = kpL.octave;
         const float &vL = kpL.pt.y;
         const float &uL = kpL.pt.x;
 
+        //根据左图特征点的y坐标位置的得到右图特征点的候选特征点vCandidates
         const vector<size_t> &vCandidates = vRowIndices[vL];
 
         if(vCandidates.empty())
@@ -519,9 +539,11 @@ void Frame::ComputeStereoMatches()
         if(maxU<0)
             continue;
 
+        //记录右图中与左图特征点的描述子最相似的右图特征点及其索引
         int bestDist = ORBmatcher::TH_HIGH;
         size_t bestIdxR = 0;
 
+        //左图特征点的描述子
         const cv::Mat &dL = mDescriptors.row(iL);
 
         // Compare descriptor to right keypoints
@@ -537,7 +559,9 @@ void Frame::ComputeStereoMatches()
 
             if(uR>=minU && uR<=maxU)
             {
+                //右图特征点的描述子
                 const cv::Mat &dR = mDescriptorsRight.row(iR);
+                //计算描述子之间的相似度（距离）
                 const int dist = ORBmatcher::DescriptorDistance(dL,dR);
 
                 if(dist<bestDist)
@@ -547,6 +571,13 @@ void Frame::ComputeStereoMatches()
                 }
             }
         }
+        /*****************
+         *      __________ u(x)
+         *      |
+         *      |
+         *      |
+         *      v(y)
+         *****************/
 
         // Subpixel match by correlation
         if(bestDist<thOrbDist)
@@ -560,8 +591,10 @@ void Frame::ComputeStereoMatches()
 
             // sliding window search
             const int w = 5;
+            //取出滑动窗口
             cv::Mat IL = mpORBextractorLeft->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduL-w,scaleduL+w+1);
             IL.convertTo(IL,CV_32F);
+            //整个滑动窗口减去图像中间的灰度值
             IL = IL - IL.at<float>(w,w) *cv::Mat::ones(IL.rows,IL.cols,CV_32F);
 
             int bestDist = INT_MAX;
@@ -575,13 +608,15 @@ void Frame::ComputeStereoMatches()
             if(iniu<0 || endu >= mpORBextractorRight->mvImagePyramid[kpL.octave].cols)
                 continue;
 
+            //修正量的范围+-5个像素
             for(int incR=-L; incR<=+L; incR++)
             {
                 cv::Mat IR = mpORBextractorRight->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduR0+incR-w,scaleduR0+incR+w+1);
                 IR.convertTo(IR,CV_32F);
                 IR = IR - IR.at<float>(w,w) *cv::Mat::ones(IR.rows,IR.cols,CV_32F);
+                //每个元素减速中间的那个元素，简单归一化，减少光照强度的影响
 
-                float dist = cv::norm(IL,IR,cv::NORM_L1);
+                float dist = cv::norm(IL,IR,cv::NORM_L1);//一范数，绝对值求和
                 if(dist<bestDist)
                 {
                     bestDist =  dist;
@@ -595,18 +630,21 @@ void Frame::ComputeStereoMatches()
                 continue;
 
             // Sub-pixel match (Parabola fitting)
+            //滑动窗口得到的最佳修正量左右两个像素
             const float dist1 = vDists[L+bestincR-1];
             const float dist2 = vDists[L+bestincR];
             const float dist3 = vDists[L+bestincR+1];
 
-            const float deltaR = (dist1-dist3)/(2.0f*(dist1+dist3-2.0f*dist2));
+            const float deltaR = (dist1-dist3)/(2.0f*(dist1+dist3-2.0f*dist2));//???
 
             if(deltaR<-1 || deltaR>1)
                 continue;
 
             // Re-scaled coordinate
-            float bestuR = mvScaleFactors[kpL.octave]*((float)scaleduR0+(float)bestincR+deltaR);
+            //得到的最佳的右图bestuR特征点u(x)坐标
+            float bestuR = mvScaleFactors[kpL.octave] * ( (float)scaleduR0 + (float)bestincR + deltaR );
 
+            //计算视差
             float disparity = (uL-bestuR);
 
             if(disparity>=minD && disparity<maxD)
@@ -616,6 +654,7 @@ void Frame::ComputeStereoMatches()
                     disparity=0.01;
                     bestuR = uL-0.01;
                 }
+                //计算深度
                 mvDepth[iL]=mbf/disparity;
                 mvuRight[iL] = bestuR;
                 vDistIdx.push_back(pair<int,int>(bestDist,iL));
@@ -623,9 +662,10 @@ void Frame::ComputeStereoMatches()
         }
     }
 
+    //排序，取中值
     sort(vDistIdx.begin(),vDistIdx.end());
     const float median = vDistIdx[vDistIdx.size()/2].first;
-    const float thDist = 1.5f*1.4f*median;
+    const float thDist = 1.5f*1.4f*median; //???????????????????
 
     for(int i=vDistIdx.size()-1;i>=0;i--)
     {

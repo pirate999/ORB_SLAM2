@@ -46,6 +46,7 @@ class Tracking;
 class LocalMapping;
 class LoopClosing;
 
+//slam系统类
 class System
 {
 public:
@@ -59,6 +60,7 @@ public:
 public:
 
     // Initialize the SLAM system. It launches the Local Mapping, Loop Closing and Viewer threads.
+    //初始化SLAM系统,启动局部地图,回环检测和显示的线程
     System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor, const bool bUseViewer = true);
 
     // Proccess the given stereo frame. Images must be synchronized and rectified.
@@ -78,12 +80,14 @@ public:
     cv::Mat TrackMonocular(const cv::Mat &im, const double &timestamp);
 
     // This stops local mapping thread (map building) and performs only camera tracking.
+    //激活定位模式,停止局部地图线程,只执行摄像头线程
     void ActivateLocalizationMode();
     // This resumes local mapping thread and performs SLAM again.
     void DeactivateLocalizationMode();
 
     // Returns true if there have been a big map change (loop closure, global BA)
     // since last call to this function
+    //当有大的地图改动的时候返回true
     bool MapChanged();
 
     // Reset the system (clear map)
@@ -128,6 +132,7 @@ private:
     eSensor mSensor;
 
     // ORB vocabulary used for place recognition and feature matching.
+    //词袋模式用来重定位和特征匹配
     ORBVocabulary* mpVocabulary;
 
     // KeyFrame database for place recognition (relocalization and loop detection).
@@ -142,10 +147,13 @@ private:
     Tracking* mpTracker;
 
     // Local Mapper. It manages the local map and performs local bundle adjustment.
+    //局部地图规划,管理局部地图,并且进行局部的BA
     LocalMapping* mpLocalMapper;
 
     // Loop Closer. It searches loops with every new keyframe. If there is a loop it performs
     // a pose graph optimization and full bundle adjustment (in a new thread) afterwards.
+    //回环检测器,搜索每一帧新的数据,如果有回环就执行姿态的图优化和全局的BA(在一个
+    //新的线程中)
     LoopClosing* mpLoopCloser;
 
     // The viewer draws the map and the current camera pose. It uses Pangolin.

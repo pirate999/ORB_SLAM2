@@ -49,7 +49,6 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
     mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpMap(pMap), mnLastRelocFrameId(0)
 {
     // Load camera parameters from settings file
-
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
     float fx = fSettings["Camera.fx"];
     float fy = fSettings["Camera.fy"];
@@ -274,15 +273,20 @@ void Tracking::Track()
     mLastProcessedState=mState;
 
     // Get Map Mutex -> Map cannot be changed
+    //获取地图更新的锁
     unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
+    //初始化
     if(mState==NOT_INITIALIZED)
     {
         if(mSensor==System::STEREO || mSensor==System::RGBD)
+            //立体相机初始化
             StereoInitialization();
         else
+            //单目初始化
             MonocularInitialization();
 
+        //帧更新
         mpFrameDrawer->Update(this);
 
         if(mState!=OK)
@@ -302,6 +306,7 @@ void Tracking::Track()
             if(mState==OK)
             {
                 // Local Mapping might have changed some MapPoints tracked in last frame
+                //这个啥意思，检查在上一帧图像中被替换的MapPoints
                 CheckReplacedInLastFrame();
 
                 if(mVelocity.empty() || mCurrentFrame.mnId<mnLastRelocFrameId+2)
@@ -753,10 +758,11 @@ void Tracking::CheckReplacedInLastFrame()
     }
 }
 
-
+//跟踪关键帧
 bool Tracking::TrackReferenceKeyFrame()
 {
     // Compute Bag of Words vector
+    //把该帧图像的特征点的描述子转换为词袋模型中词
     mCurrentFrame.ComputeBoW();
 
     // We perform first an ORB matching with the reference keyframe
@@ -766,18 +772,21 @@ bool Tracking::TrackReferenceKeyFrame()
 
     int nmatches = matcher.SearchByBoW(mpReferenceKF,mCurrentFrame,vpMapPointMatches);
 
+    //not enough to solve PnP
     if(nmatches<15)
         return false;
 
     mCurrentFrame.mvpMapPoints = vpMapPointMatches;
     mCurrentFrame.SetPose(mLastFrame.mTcw);
 
+    // optimize current frame's pose
     Optimizer::PoseOptimization(&mCurrentFrame);
 
     // Discard outliers
     int nmatchesMap = 0;
     for(int i =0; i<mCurrentFrame.N; i++)
     {
+        //MapPoints associated to keypoints, NULL pointer if no association.
         if(mCurrentFrame.mvpMapPoints[i])
         {
             if(mCurrentFrame.mvbOutlier[i])
@@ -864,6 +873,7 @@ void Tracking::UpdateLastFrame()
     }
 }
 
+// 根据匀速运动模型跟踪
 bool Tracking::TrackWithMotionModel()
 {
     ORBmatcher matcher(0.9,true);
@@ -882,6 +892,7 @@ bool Tracking::TrackWithMotionModel()
         th=15;
     else
         th=7;
+    //在相邻帧数据之间进行匹配
     int nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,th,mSensor==System::MONOCULAR);
 
     // If few matches, uses a wider window search
@@ -916,7 +927,7 @@ bool Tracking::TrackWithMotionModel()
             else if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
                 nmatchesMap++;
         }
-    }    
+    }
 
     if(mbOnlyTracking)
     {
@@ -943,13 +954,18 @@ bool Tracking::TrackLocalMap()
     // Update MapPoints Statistics
     for(int i=0; i<mCurrentFrame.N; i++)
     {
+        //if not null pointer
         if(mCurrentFrame.mvpMapPoints[i])
         {
+            //if not outlier
             if(!mCurrentFrame.mvbOutlier[i])
             {
+                //increase found by one ?????????
                 mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
+                // if not only tracking mode
                 if(!mbOnlyTracking)
                 {
+                    //if the keyframe observe the MapPoint not zero
                     if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
                         mnMatchesInliers++;
                 }
@@ -1155,6 +1171,7 @@ void Tracking::SearchLocalPoints()
             else
             {
                 pMP->IncreaseVisible();
+                //last frame seen this Map Point???
                 pMP->mnLastFrameSeen = mCurrentFrame.mnId;
                 pMP->mbTrackInView = false;
             }
@@ -1172,6 +1189,7 @@ void Tracking::SearchLocalPoints()
         if(pMP->isBad())
             continue;
         // Project (this fills MapPoint variables for matching)
+        ///平截头体，圆锥体做的
         if(mCurrentFrame.isInFrustum(pMP,0.5))
         {
             pMP->IncreaseVisible();
@@ -1338,6 +1356,7 @@ void Tracking::UpdateLocalKeyFrames()
     }
 }
 
+//跟踪丢失的会进行重定位，ORBSLAM容易跟丢，在动态障碍物或者特征点很少的情况下。
 bool Tracking::Relocalization()
 {
     // Compute Bag of Words Vector
@@ -1345,6 +1364,7 @@ bool Tracking::Relocalization()
 
     // Relocalization is performed when tracking is lost
     // Track Lost: Query KeyFrame Database for keyframe candidates for relocalisation
+    //从关键帧数据库中查询重定位的候选关键帧
     vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectRelocalizationCandidates(&mCurrentFrame);
 
     if(vpCandidateKFs.empty())
@@ -1367,6 +1387,7 @@ bool Tracking::Relocalization()
 
     int nCandidates=0;
 
+    //遍历所有的筛选出的关键帧
     for(int i=0; i<nKFs; i++)
     {
         KeyFrame* pKF = vpCandidateKFs[i];
@@ -1374,6 +1395,7 @@ bool Tracking::Relocalization()
             vbDiscarded[i] = true;
         else
         {
+            //在当前帧和关键帧之间进行描述子匹配
             int nmatches = matcher.SearchByBoW(pKF,mCurrentFrame,vvpMapPointMatches[i]);
             if(nmatches<15)
             {
@@ -1382,6 +1404,7 @@ bool Tracking::Relocalization()
             }
             else
             {
+                //在匹配的点之间进行PnP solver
                 PnPsolver* pSolver = new PnPsolver(mCurrentFrame,vvpMapPointMatches[i]);
                 pSolver->SetRansacParameters(0.99,10,300,4,0.5,5.991);
                 vpPnPsolvers[i] = pSolver;
@@ -1392,6 +1415,7 @@ bool Tracking::Relocalization()
 
     // Alternatively perform some iterations of P4P RANSAC
     // Until we found a camera pose supported by enough inliers
+    //进行P4P的 RANSAC迭代直到我们找到一个相机位置支持足够的inlier feature
     bool bMatch = false;
     ORBmatcher matcher2(0.9,true);
 

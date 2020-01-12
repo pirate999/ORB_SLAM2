@@ -81,6 +81,7 @@ public:
 
     // Check if a MapPoint is in the frustum of the camera
     // and fill variables of the MapPoint to be used by the tracking
+    ///检查地图点是否在相机的视锥体中，并填充MapPoint在tracking中使用的变量
     bool isInFrustum(MapPoint* pMP, float viewingCosLimit);
 
     // Compute the cell of a keypoint (return false if outside the grid)
@@ -135,7 +136,7 @@ public:
     // In the stereo case, mvKeysUn is redundant as images must be rectified.
     // In the RGB-D case, RGB images can be distorted.
     std::vector<cv::KeyPoint> mvKeys, mvKeysRight;
-    std::vector<cv::KeyPoint> mvKeysUn;
+    std::vector<cv::KeyPoint> mvKeysUn;// undistored keys
 
     // Corresponding stereo coordinate and depth for each keypoint.
     // "Monocular" keypoints have a negative value.
@@ -196,16 +197,17 @@ private:
     void UndistortKeyPoints();
 
     // Computes image bounds for the undistorted image (called in the constructor).
+    //给没有进行去除畸变的图像计算边界，只在构造函数中调用一次
     void ComputeImageBounds(const cv::Mat &imLeft);
 
     // Assign keypoints to the grid for speed up feature matching (called in the constructor).
     void AssignFeaturesToGrid();
 
     // Rotation, translation and camera center
-    cv::Mat mRcw;
-    cv::Mat mtcw;
-    cv::Mat mRwc;
-    cv::Mat mOw; //==mtwc
+    cv::Mat mRcw;///世界坐标系的点到相机坐标系变换需要乘以这个旋转
+    cv::Mat mtcw;/// 世界坐标系的点到相机坐标系变换需要加上这个平移
+    cv::Mat mRwc;///相机坐标系的点到世界坐标系变换需要乘以这个旋转
+    cv::Mat mOw; //==mtwc /// 相机坐标系的点到世界坐标系变换需要加上这个平移，就是相机的在世界坐标系中的坐标
 };
 
 }// namespace ORB_SLAM
